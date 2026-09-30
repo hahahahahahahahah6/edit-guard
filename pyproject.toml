@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "edit-guard"
+version = "0.1.0"
+description = "A Claude Code PreToolUse hook that blocks stale concurrent edits across agent sessions"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "hao li" }]
+keywords = ["claude-code", "hooks", "concurrency", "developer-tools", "agents"]
+
+[project.scripts]
+edit-guard = "edit_guard.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/hahahahahahahahah6/edit-guard"
+
+[tool.setuptools.packages.find]
+where = ["src"]
