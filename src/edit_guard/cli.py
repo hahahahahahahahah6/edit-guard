@@ -30,7 +30,11 @@ def _tool_path(tool_name, tool_input):
 
 
 def cmd_hook(args):
-    """Entry point for the PreToolUse hook. Exits 0 (allow) or 2 (block)."""
+    """Entry point for the PreToolUse/PostToolUse hooks.
+
+    Exits 0 (allow) or 2 (block). PostToolUse (--post-write) only records
+    the post-write digest and never blocks.
+    """
     try:
         data = _hook_input()
         tool = data.get("tool_name", "")
@@ -39,6 +43,13 @@ def cmd_hook(args):
             return 0
         path = _tool_path(tool, data.get("tool_input"))
         if not path:
+            return 0
+
+        if getattr(args, "post_write", False):
+            # PostToolUse: the write has landed; record the new digest so
+            # this session's next PreToolUse check sees its own change.
+            if tool in guard.WRITE_TOOLS:
+                guard.record(session, tool, path, guard.digest_of(path))
             return 0
 
         if tool in guard.READ_TOOLS or args.observe:
@@ -64,10 +75,19 @@ HOOK_SNIPPET = {
     "matcher": "Edit|Write|MultiEdit|NotebookEdit",
     "hooks": [{"type": "command", "command": "edit-guard hook"}],
 }
+POST_SNIPPET = {
+    "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+    "hooks": [{"type": "command", "command": "edit-guard hook --post-write"}],
+}
 READ_SNIPPET = {
     "matcher": "Read",
     "hooks": [{"type": "command", "command": "edit-guard hook --observe"}],
 }
+ALL_SNIPPETS = (
+    ("PreToolUse", HOOK_SNIPPET),
+    ("PostToolUse", POST_SNIPPET),
+    ("PreToolUse", READ_SNIPPET),
+)
 
 
 def cmd_install(args):
@@ -95,30 +115,31 @@ def cmd_install(args):
     if not isinstance(hooks, dict):
         hooks = {}
         settings["hooks"] = hooks
-    pre = hooks.get("PreToolUse")
-    if not isinstance(pre, list):
-        pre = []
-        hooks["PreToolUse"] = pre
 
-    def present(snippet):
+    def present(entries, snippet):
         return any(
             h.get("matcher") == snippet["matcher"]
             and any("edit-guard" in (x.get("command", "") or "")
                     for x in h.get("hooks", []))
-            for h in pre if isinstance(h, dict))
+            for h in entries if isinstance(h, dict))
 
     added = 0
-    for snippet in (HOOK_SNIPPET, READ_SNIPPET):
-        if not present(snippet):
-            pre.append(snippet)
-            added += 1
+    for hook_type, snippet in ALL_SNIPPETS:
+        entries = hooks.get(hook_type)
+        if not isinstance(entries, list):
+            entries = []
+            hooks[hook_type] = entries
+        if present(entries, snippet):
+            continue
+        entries.append(snippet)
+        added += 1
 
     os.makedirs(os.path.dirname(sp), exist_ok=True)
     with open(sp, "w", encoding="utf-8") as fh:
         json.dump(settings, fh, indent=2)
         fh.write("\n")
     print("Installed edit-guard hooks into %s (%d added, %d already present)."
-          % (sp, added, 2 - added))
+          % (sp, added, len(ALL_SNIPPETS) - added))
     print("Restart Claude Code for the hooks to take effect.")
     return 0
 
@@ -151,6 +172,9 @@ def build_parser():
     ph = sub.add_parser("hook", help="Run as a Claude Code PreToolUse hook.")
     ph.add_argument("--observe", action="store_true",
                     help="Record only, never block (for Read).")
+    ph.add_argument("--post-write", action="store_true",
+                    help="PostToolUse mode: record the post-write digest, "
+                         "never block.")
     ph.set_defaults(func=cmd_hook)
 
     pi = sub.add_parser("install", help="Install into ~/.claude/settings.json.")

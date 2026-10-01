@@ -1,10 +1,13 @@
 """Core staleness-detection logic for edit-guard.
 
-Model: every Read/Edit/Write observed through the hook records
-(session_id, path, digest_seen, timestamp) in an append-only log.
-When a session attempts Edit/Write on a path, we compare the file's current
-digest against the digest *that session* last saw. If the file changed since
-then AND another session touched it in between, the edit is stale and blocked.
+Model: every Read/Edit/Write observed through the hooks records
+(session_id, tool, path, digest_seen, timestamp) in an append-only log.
+PreToolUse records the digest *before* a write; PostToolUse records the
+digest *after* the write lands. When a session attempts Edit/Write on a
+path, we compare the file's current digest against the digest *that session*
+last saw (usually its own post-write record). If the file changed since
+then AND another session *wrote* to it in between, the edit is stale and
+blocked. Another session's Read never counts as a modification.
 
 Everything fails open: any unexpected error means "allow".
 """
@@ -118,18 +121,14 @@ def _check_inner(session_id, path):
     if current is None:
         return True, ""  # new file or unreadable: nothing to be stale against
 
-    mine = None      # my most recent observation of this path
-    other_newer = None  # another session's observation newer than mine
-    for e in _read_log():
-        if e.get("path") != path:
-            continue
+    entries = [e for e in _read_log() if e.get("path") == path]
+
+    # Pass 1: my most recent observation of this path.
+    mine = None
+    for e in entries:
         if e.get("session") == session_id:
             if mine is None or e.get("ts", 0) > mine.get("ts", 0):
                 mine = e
-        else:
-            if (mine is None or e.get("ts", 0) > mine.get("ts", 0)):
-                if other_newer is None or e.get("ts", 0) > other_newer.get("ts", 0):
-                    other_newer = e
 
     if mine is None:
         # I have never seen this file; someone else may have. First write
@@ -139,6 +138,18 @@ def _check_inner(session_id, path):
 
     if mine.get("digest") == current:
         return True, ""  # unchanged since I last saw it
+
+    # Pass 2: another session's *write* newer than my last observation.
+    # Reads can never modify the file, so they are not blame candidates.
+    other_newer = None
+    for e in entries:
+        if e.get("session") == session_id:
+            continue
+        if e.get("tool") not in WRITE_TOOLS:
+            continue
+        if e.get("ts", 0) > mine.get("ts", 0):
+            if other_newer is None or e.get("ts", 0) > other_newer.get("ts", 0):
+                other_newer = e
 
     if other_newer is not None:
         other = other_newer.get("session", "another session")

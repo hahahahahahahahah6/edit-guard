@@ -1,7 +1,7 @@
 # edit-guard
 
-A tiny [Claude Code](https://docs.anthropic.com/en/docs/claude-code) `PreToolUse`
-hook that stops one agent session from editing a file another session changed
+A tiny [Claude Code](https://docs.anthropic.com/en/docs/claude-code) hook that
+stops one agent session from editing a file another session changed
 underneath it.
 
 The failure mode, quoted from a real-world report: *"With several agent
@@ -16,15 +16,20 @@ Zero dependencies. Python standard library only. Everything stays local.
 ## Install
 
 ```bash
-pip install edit-guard
+git clone https://github.com/hahahahahahahahah6/edit-guard
+cd edit-guard
+pip install .
 edit-guard install
 ```
 
-`install` merges two hook entries into `~/.claude/settings.json` (backing it up
+`install` merges three hook entries into `~/.claude/settings.json` (backing it up
 first, never clobbering your existing settings):
 
-- `Edit|Write|MultiEdit|NotebookEdit` → `edit-guard hook` (may block)
-- `Read` → `edit-guard hook --observe` (records what you saw, never blocks)
+- `PreToolUse` on `Edit|Write|MultiEdit|NotebookEdit` → `edit-guard hook` (may block)
+- `PostToolUse` on `Edit|Write|MultiEdit|NotebookEdit` → `edit-guard hook --post-write`
+  (records the digest *after* your write, never blocks — this is what keeps
+  your own consecutive edits from looking stale)
+- `PreToolUse` on `Read` → `edit-guard hook --observe` (records what you saw, never blocks)
 
 Restart Claude Code afterwards. That's it — no MCP server, no daemon, no
 accounts.
