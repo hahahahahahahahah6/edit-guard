@@ -16,6 +16,13 @@ Zero dependencies. Python standard library only. Everything stays local.
 ## Install
 
 ```bash
+pip install edit-guard
+edit-guard install
+```
+
+Or from source:
+
+```bash
 git clone https://github.com/hahahahahahahahah6/edit-guard
 cd edit-guard
 pip install .
