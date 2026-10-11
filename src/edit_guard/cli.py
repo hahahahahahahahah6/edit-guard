@@ -7,6 +7,7 @@ import shutil
 import sys
 
 from . import guard
+from . import inject
 
 
 def _hook_input():
@@ -144,6 +145,22 @@ def cmd_install(args):
     return 0
 
 
+def cmd_inject(args):
+    """Emit recorded decisions for a SessionStart hook (stdout).
+
+    Never fails: empty output and exit 0 when there is nothing to inject.
+    """
+    try:
+        out = inject.render(adr_dir=args.adr_dir,
+                            decisions_file=args.decisions_file,
+                            max_chars=args.max_chars)
+    except Exception:
+        out = ""
+    if out:
+        sys.stdout.write(out + "\n")
+    return 0
+
+
 def cmd_log(args):
     entries = guard._read_log()
     entries.sort(key=lambda e: e.get("ts", 0))
@@ -186,6 +203,21 @@ def build_parser():
 
     ps = sub.add_parser("status", help="Show state and config paths.")
     ps.set_defaults(func=cmd_status)
+
+    pinj = sub.add_parser("inject",
+                          help="Inject recorded decisions into session context.")
+    pinj.add_argument("--session-start", action="store_true",
+                      help="Emit the decision summary for a SessionStart hook "
+                           "(this is the default behavior).")
+    pinj.add_argument("--adr-dir", default=None, metavar="DIR",
+                      help="Directory of ADR *.md files "
+                           "(default: docs/adr, then adr).")
+    pinj.add_argument("--decisions-file", default=None, metavar="FILE",
+                      help="DECISIONS.md path (default: ./DECISIONS.md; "
+                           "pass '' to disable).")
+    pinj.add_argument("--max-chars", type=int, default=inject.DEFAULT_MAX_CHARS,
+                      help="Maximum output size (default: %(default)s).")
+    pinj.set_defaults(func=cmd_inject)
     return p
 
 
