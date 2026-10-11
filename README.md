@@ -13,6 +13,64 @@ re-read first.
 
 Zero dependencies. Python standard library only. Everything stays local.
 
+## Two halves: block stale edits, inject old decisions
+
+edit-guard is one tool with two complementary moves — defense and offense:
+
+- **Defense (pre-edit):** the `PreToolUse`/`PostToolUse` hook described above
+  blocks a session from writing a file another session changed underneath it.
+- **Offense (session-start):** a new session re-reads the project's recorded
+  architecture decisions at startup, so it doesn't violate choices made in a
+  previous session. This half is inspired by uehara's ADR hook idea: at
+  session start, re-read the ADRs instead of re-litigating them.
+
+### SessionStart hook setup
+
+`edit-guard inject --session-start` prints a compact markdown summary of your
+project's `docs/adr/*.md` (or `adr/`) and `DECISIONS.md` — one bullet per
+decision: title, status, and the gist of the `## Decision` section. Claude
+Code adds a `SessionStart` hook's stdout to the session context automatically,
+so merge this into `~/.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "edit-guard inject --session-start" }
+        ]
+      }
+    ]
+  }
+}
+```
+
+Tuning flags:
+
+- `--adr-dir DIR` — use this directory instead of `docs/adr`/`adr`
+- `--decisions-file FILE` — use this file instead of `./DECISIONS.md`
+  (pass an empty string to disable it)
+- `--max-chars N` — cap the output size (default 4000)
+
+With no decision files present, the command prints nothing and exits 0 —
+a repo without ADRs gets no noise in its session context.
+
+## How it differs
+
+The heavyweight answers to multi-session coordination are session buses and
+file-reservation servers (e.g. a worktree claim guard: a Mod-style,
+consultative tool — it asks who owns what, and never refuses a write).
+edit-guard takes the opposite stance on both axes:
+
+- **Refusal instead of consultation.** A stale write is *blocked* (exit 2),
+  not warned about. Warnings get read, noted, and edited over anyway.
+- **Proactive instead of only reactive.** The session-start inject pushes
+  recorded decisions *into* the new session before it acts, instead of only
+  catching violations after the fact.
+
+Block at write time, inject at start time. That's the whole design.
+
 ## Install
 
 ```bash
@@ -85,8 +143,16 @@ edit-guard status         # state dir / log / settings paths
 ## Development
 
 ```bash
-python3 tests/test_guard.py
+python3 -m unittest discover -s tests
 ```
+
+## Changelog
+
+- **0.2.0** — new `edit-guard inject --session-start`: summarize
+  `docs/adr/*.md` / `adr/` / `DECISIONS.md` into session context via a
+  Claude Code `SessionStart` hook (offense to complement the pre-edit
+  refusal hook). `--adr-dir`, `--decisions-file`, `--max-chars` flags.
+- **0.1.0** — pre-edit stale-write blocking across sessions.
 
 ## License
 
